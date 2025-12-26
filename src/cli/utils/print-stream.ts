@@ -28,12 +28,12 @@ export async function printStream(
         break;
       case "tool-call":
         process.stdout.write(
-          `\x1b[92mtool-call: ${JSON.stringify(part, null, 2)}\x1b[0m\n\n`,
+          `\x1b[92mtool-call: ${JSON.stringify({ toolName: part.toolName, input: part.toolName }, null, 2)}\x1b[0m\n\n`,
         );
         break;
       case "tool-result":
         process.stdout.write(
-          `\x1b[92mtool-result: ${JSON.stringify(part, null, 2)}\x1b[0m\n\n`,
+          `\x1b[92mtool-result: ${JSON.stringify({ toolName: part.toolName, input: part.input, output: JSON.stringify(part.output, null, 2).slice(0, 100) }, null, 2)}\x1b[0m\n\n`,
         );
         break;
     }
