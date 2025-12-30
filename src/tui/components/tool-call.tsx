@@ -119,6 +119,7 @@ function ToolLayout({
   denialReason,
   approvalRequested,
   approvalId,
+  isActiveApproval,
 }: {
   name: string;
   summary: string;
@@ -129,6 +130,7 @@ function ToolLayout({
   denialReason?: string;
   approvalRequested?: boolean;
   approvalId?: string;
+  isActiveApproval?: boolean;
 }) {
   const dotColor = denied
     ? "red"
@@ -157,7 +159,7 @@ function ToolLayout({
         <Text color="gray">)</Text>
       </Box>
 
-      {approvalRequested && approvalId && (
+      {isActiveApproval && approvalId && (
         <ApprovalButtons approvalId={approvalId} />
       )}
 
@@ -199,6 +201,7 @@ function FileChangeLayout({
   denialReason,
   approvalRequested,
   approvalId,
+  isActiveApproval,
 }: {
   action: "Create" | "Update";
   filePath: string;
@@ -211,6 +214,7 @@ function FileChangeLayout({
   denialReason?: string;
   approvalRequested?: boolean;
   approvalId?: string;
+  isActiveApproval?: boolean;
 }) {
   const dotColor = denied
     ? "red"
@@ -304,7 +308,7 @@ function FileChangeLayout({
       )}
 
       {/* Approval buttons */}
-      {approvalRequested && approvalId && (
+      {isActiveApproval && approvalId && (
         <ApprovalButtons approvalId={approvalId} />
       )}
 
@@ -412,7 +416,13 @@ function createEditDiffLines(
   return { lines: result, additions, removals };
 }
 
-export function ToolCall({ part }: { part: TUIAgentUIToolPart }) {
+export function ToolCall({
+  part,
+  activeApprovalId,
+}: {
+  part: TUIAgentUIToolPart;
+  activeApprovalId: string | null;
+}) {
   const running =
     part.state === "input-streaming" || part.state === "input-available";
   const approvalRequested = part.state === "approval-requested";
@@ -424,6 +434,8 @@ export function ToolCall({ part }: { part: TUIAgentUIToolPart }) {
   const approvalId = approvalRequested
     ? (part as { approval?: { id: string } }).approval?.id
     : undefined;
+  // Only show interactive approval buttons for the first pending approval
+  const isActiveApproval = approvalId != null && approvalId === activeApprovalId;
 
   switch (part.type) {
     case "tool-read": {
@@ -466,6 +478,7 @@ export function ToolCall({ part }: { part: TUIAgentUIToolPart }) {
           denialReason={denialReason}
           approvalRequested={approvalRequested}
           approvalId={approvalId}
+          isActiveApproval={isActiveApproval}
         />
       );
     }
@@ -498,6 +511,7 @@ export function ToolCall({ part }: { part: TUIAgentUIToolPart }) {
           denialReason={denialReason}
           approvalRequested={approvalRequested}
           approvalId={approvalId}
+          isActiveApproval={isActiveApproval}
         />
       );
     }
@@ -558,6 +572,7 @@ export function ToolCall({ part }: { part: TUIAgentUIToolPart }) {
           denialReason={denialReason}
           approvalRequested={approvalRequested}
           approvalId={approvalId}
+          isActiveApproval={isActiveApproval}
         />
       );
     }

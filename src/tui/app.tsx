@@ -43,13 +43,25 @@ const ReasoningPart = memo(function ReasoningPart({ text }: { text: string }) {
   );
 });
 
-function ToolPartWrapper({ part }: { part: TUIAgentUIToolPart }) {
-  return <ToolCall part={part} />;
+function ToolPartWrapper({
+  part,
+  activeApprovalId,
+}: {
+  part: TUIAgentUIToolPart;
+  activeApprovalId: string | null;
+}) {
+  return <ToolCall part={part} activeApprovalId={activeApprovalId} />;
 }
 
-function renderPart(part: TUIAgentUIMessagePart, key: string) {
+function renderPart(
+  part: TUIAgentUIMessagePart,
+  key: string,
+  activeApprovalId: string | null,
+) {
   if (isToolUIPart(part)) {
-    return <ToolPartWrapper key={key} part={part} />;
+    return (
+      <ToolPartWrapper key={key} part={part} activeApprovalId={activeApprovalId} />
+    );
   }
 
   switch (part.type) {
@@ -90,13 +102,15 @@ const UserMessage = memo(function UserMessage({
 
 const AssistantMessage = memo(function AssistantMessage({
   message,
+  activeApprovalId,
 }: {
   message: TUIAgentUIMessage;
+  activeApprovalId: string | null;
 }) {
   return (
     <Box flexDirection="column">
       {message.parts.map((part, index) =>
-        renderPart(part, `${message.id}-${index}`),
+        renderPart(part, `${message.id}-${index}`, activeApprovalId),
       )}
     </Box>
   );
@@ -104,27 +118,37 @@ const AssistantMessage = memo(function AssistantMessage({
 
 const Message = memo(function Message({
   message,
+  activeApprovalId,
 }: {
   message: TUIAgentUIMessage;
+  activeApprovalId: string | null;
 }) {
   if (message.role === "user") {
     return <UserMessage message={message} />;
   }
   if (message.role === "assistant") {
-    return <AssistantMessage message={message} />;
+    return (
+      <AssistantMessage message={message} activeApprovalId={activeApprovalId} />
+    );
   }
   return null;
 });
 
 const MessagesList = memo(function MessagesList({
   messages,
+  activeApprovalId,
 }: {
   messages: TUIAgentUIMessage[];
+  activeApprovalId: string | null;
 }) {
   return (
     <Box flexDirection="column">
       {messages.map((message) => (
-        <Message key={message.id} message={message} />
+        <Message
+          key={message.id}
+          message={message}
+          activeApprovalId={activeApprovalId}
+        />
       ))}
     </Box>
   );
@@ -203,14 +227,20 @@ export function App({ options }: AppProps) {
 
   const isStreaming = status === "streaming" || status === "submitted";
 
-  const hasPendingApproval = useMemo(() => {
+  const { hasPendingApproval, activeApprovalId } = useMemo(() => {
     const lastMessage = messages[messages.length - 1];
     if (lastMessage?.role === "assistant") {
-      return lastMessage.parts.some(
-        (p) => isToolUIPart(p) && p.state === "approval-requested",
-      );
+      for (const p of lastMessage.parts) {
+        if (isToolUIPart(p) && p.state === "approval-requested") {
+          const approval = (p as { approval?: { id: string } }).approval;
+          return {
+            hasPendingApproval: true,
+            activeApprovalId: approval?.id ?? null,
+          };
+        }
+      }
     }
-    return false;
+    return { hasPendingApproval: false, activeApprovalId: null };
   }, [messages]);
 
   useInput((input, key) => {
@@ -253,7 +283,7 @@ export function App({ options }: AppProps) {
         cwd={state.workingDirectory}
       />
 
-      <MessagesList messages={messages} />
+      <MessagesList messages={messages} activeApprovalId={activeApprovalId} />
 
       <ErrorDisplay error={error} />
 
