@@ -2,3 +2,4 @@
 - [ ] move to use context (remove prop drilling)
  - [ ] can store model id in context and then update with hooks?
 - [ ] update common types file to also have agent definition
+- [ ] cancel requests with esc

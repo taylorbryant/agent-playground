@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Text, useInput } from "ink";
 import chalk from "chalk";
 
@@ -41,7 +41,7 @@ function findPrevWordBoundary(value: string, cursorOffset: number): number {
 }
 
 export function TextInput({
-  value: originalValue,
+  value: externalValue,
   onChange,
   onSubmit,
   onCursorChange,
@@ -56,42 +56,76 @@ export function TextInput({
   focus = true,
   showCursor = true
 }: TextInputProps) {
-  const [state, setState] = useState({
-    cursorOffset: (originalValue || "").length,
-    cursorWidth: 0
-  });
+  // Internal state - this is the source of truth during typing
+  const [internalValue, setInternalValue] = useState(externalValue || "");
+  const [cursorOffset, setCursorOffset] = useState((externalValue || "").length);
+  const [cursorWidth, setCursorWidth] = useState(0);
 
-  const { cursorOffset, cursorWidth } = state;
+  // Refs to always have access to latest values in useInput callback
+  const valueRef = useRef(internalValue);
+  const cursorRef = useRef(cursorOffset);
 
-  // Sync with external cursor position when provided
+  // Keep refs in sync with state
+  valueRef.current = internalValue;
+  cursorRef.current = cursorOffset;
+
+  // Track last external values to detect intentional parent changes
+  const lastExternalValueRef = useRef(externalValue);
+  const lastExternalCursorRef = useRef(externalCursorPosition);
+
+  // Sync with external value when parent explicitly changes it
+  // (e.g., after autocomplete selection or reset)
   useEffect(() => {
-    if (externalCursorPosition !== undefined) {
-      setState((prev) => ({
-        ...prev,
-        cursorOffset: Math.min(externalCursorPosition, (originalValue || "").length),
-        cursorWidth: 0
-      }));
+    if (externalValue !== lastExternalValueRef.current) {
+      lastExternalValueRef.current = externalValue;
+      setInternalValue(externalValue || "");
+      // Also adjust cursor if it's beyond the new value length
+      setCursorOffset((prev) => Math.min(prev, (externalValue || "").length));
     }
-  }, [externalCursorPosition, originalValue]);
+  }, [externalValue]);
 
+  // Sync with external cursor position when parent explicitly changes it
   useEffect(() => {
-    setState((previousState) => {
-      if (!focus || !showCursor) {
-        return previousState;
-      }
-      const newValue = originalValue || "";
-      if (previousState.cursorOffset > newValue.length - 1) {
-        return {
-          cursorOffset: newValue.length,
-          cursorWidth: 0
-        };
-      }
-      return previousState;
-    });
-  }, [originalValue, focus, showCursor]);
+    if (
+      externalCursorPosition !== undefined &&
+      externalCursorPosition !== lastExternalCursorRef.current
+    ) {
+      lastExternalCursorRef.current = externalCursorPosition;
+      setCursorOffset(Math.min(externalCursorPosition, valueRef.current.length));
+    }
+  }, [externalCursorPosition]);
+
+  // Clamp cursor when value changes
+  useEffect(() => {
+    if (!focus || !showCursor) return;
+    setCursorOffset((prev) => Math.min(prev, internalValue.length));
+  }, [internalValue, focus, showCursor]);
+
+  // Helper to update value and notify parent
+  const updateValue = useCallback(
+    (newValue: string, newCursor: number) => {
+      setInternalValue(newValue);
+      setCursorOffset(newCursor);
+      lastExternalValueRef.current = newValue;
+      lastExternalCursorRef.current = newCursor;
+      onChange(newValue);
+      onCursorChange?.(newCursor);
+    },
+    [onChange, onCursorChange]
+  );
+
+  // Helper to update cursor only
+  const updateCursor = useCallback(
+    (newCursor: number) => {
+      setCursorOffset(newCursor);
+      lastExternalCursorRef.current = newCursor;
+      onCursorChange?.(newCursor);
+    },
+    [onCursorChange]
+  );
 
   const cursorActualWidth = cursorWidth;
-  const value = originalValue;
+  const value = internalValue;
   let renderedValue = value;
   let renderedPlaceholder = placeholder ? chalk.grey(placeholder) : undefined;
 
@@ -120,6 +154,10 @@ export function TextInput({
 
   useInput(
     (input, key) => {
+      // Always read from refs to get latest values
+      const currentValue = valueRef.current;
+      const currentCursor = cursorRef.current;
+
       // Handle up arrow - let parent intercept if needed
       if (key.upArrow) {
         if (onUpArrow?.()) return;
@@ -141,20 +179,15 @@ export function TextInput({
       // Handle Ctrl+N - let parent intercept if needed
       if (key.ctrl && input === "n") {
         if (onCtrlN?.()) return;
-        // Don't block - allow default behavior if not handled
       }
 
       // Handle Ctrl+P - let parent intercept if needed
       if (key.ctrl && input === "p") {
         if (onCtrlP?.()) return;
-        // Don't block - allow default behavior if not handled
       }
 
       // Ignore certain key combinations
-      if (
-        (key.ctrl && input === "c") ||
-        (key.shift && key.tab)
-      ) {
+      if ((key.ctrl && input === "c") || (key.shift && key.tab)) {
         return;
       }
 
@@ -162,20 +195,20 @@ export function TextInput({
         // Let parent intercept return (e.g., for autocomplete)
         if (onReturn?.()) return;
         if (onSubmit) {
-          onSubmit(originalValue);
+          onSubmit(currentValue);
         }
         return;
       }
 
-      let nextCursorOffset = cursorOffset;
-      let nextValue = originalValue;
+      let nextCursorOffset = currentCursor;
+      let nextValue = currentValue;
       let nextCursorWidth = 0;
 
       if (key.leftArrow) {
         if (showCursor) {
           // Option+Left: Move to previous word boundary
           if (key.meta) {
-            nextCursorOffset = findPrevWordBoundary(originalValue, cursorOffset);
+            nextCursorOffset = findPrevWordBoundary(currentValue, currentCursor);
           } else {
             nextCursorOffset--;
           }
@@ -184,13 +217,13 @@ export function TextInput({
         if (showCursor) {
           // Option+Right: Move to next word boundary
           if (key.meta) {
-            let pos = cursorOffset;
+            let pos = currentCursor;
             // Skip current word
-            while (pos < originalValue.length && !/\s/.test(originalValue[pos]!)) {
+            while (pos < currentValue.length && !/\s/.test(currentValue[pos]!)) {
               pos++;
             }
             // Skip whitespace
-            while (pos < originalValue.length && /\s/.test(originalValue[pos]!)) {
+            while (pos < currentValue.length && /\s/.test(currentValue[pos]!)) {
               pos++;
             }
             nextCursorOffset = pos;
@@ -200,50 +233,40 @@ export function TextInput({
         }
       } else if (key.ctrl && input === "u") {
         // Ctrl+U: Delete entire line to the left (Cmd+Delete equivalent)
-        if (cursorOffset > 0) {
-          nextValue = originalValue.slice(cursorOffset);
+        if (currentCursor > 0) {
+          nextValue = currentValue.slice(currentCursor);
           nextCursorOffset = 0;
         }
       } else if (key.ctrl && input === "w") {
         // Ctrl+W: Delete previous word (unix-style, Option+Delete equivalent)
-        if (cursorOffset > 0) {
-          const wordBoundary = findPrevWordBoundary(
-            originalValue,
-            cursorOffset
-          );
+        if (currentCursor > 0) {
+          const wordBoundary = findPrevWordBoundary(currentValue, currentCursor);
           nextValue =
-            originalValue.slice(0, wordBoundary) +
-            originalValue.slice(cursorOffset);
+            currentValue.slice(0, wordBoundary) + currentValue.slice(currentCursor);
           nextCursorOffset = wordBoundary;
         }
       } else if (key.backspace || key.delete) {
-        if (cursorOffset > 0) {
+        if (currentCursor > 0) {
           // Option+Delete (meta + delete): Delete previous word
-          // On macOS terminal, Option+Delete sends escape + delete (\x1b\x7f)
-          // which results in key.delete = true and key.meta = true
           if (key.delete && key.meta) {
-            const wordBoundary = findPrevWordBoundary(
-              originalValue,
-              cursorOffset
-            );
+            const wordBoundary = findPrevWordBoundary(currentValue, currentCursor);
             nextValue =
-              originalValue.slice(0, wordBoundary) +
-              originalValue.slice(cursorOffset);
+              currentValue.slice(0, wordBoundary) + currentValue.slice(currentCursor);
             nextCursorOffset = wordBoundary;
           } else {
             // Regular backspace: delete one character
             nextValue =
-              originalValue.slice(0, cursorOffset - 1) +
-              originalValue.slice(cursorOffset, originalValue.length);
+              currentValue.slice(0, currentCursor - 1) +
+              currentValue.slice(currentCursor);
             nextCursorOffset--;
           }
         }
       } else {
         // Regular character input
         nextValue =
-          originalValue.slice(0, cursorOffset) +
+          currentValue.slice(0, currentCursor) +
           input +
-          originalValue.slice(cursorOffset, originalValue.length);
+          currentValue.slice(currentCursor);
         nextCursorOffset += input.length;
 
         if (input.length > 1) {
@@ -259,20 +282,12 @@ export function TextInput({
         nextCursorOffset = nextValue.length;
       }
 
-      setState({
-        cursorOffset: nextCursorOffset,
-        cursorWidth: nextCursorWidth
-      });
+      setCursorWidth(nextCursorWidth);
 
-      // Notify parent of cursor position change
-      if (nextCursorOffset !== cursorOffset) {
-        onCursorChange?.(nextCursorOffset);
-      }
-
-      if (nextValue !== originalValue) {
-        onChange(nextValue);
-        // Also notify of cursor change when value changes
-        onCursorChange?.(nextCursorOffset);
+      if (nextValue !== currentValue) {
+        updateValue(nextValue, nextCursorOffset);
+      } else if (nextCursorOffset !== currentCursor) {
+        updateCursor(nextCursorOffset);
       }
     },
     { isActive: focus }
