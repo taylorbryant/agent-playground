@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 
 import { createTUI } from "../tui/index.js";
+import { loadAgentsMd } from "./agents-md.js";
 
 async function main() {
   const args = process.argv.slice(2);
   const workingDirectory = process.cwd();
 
   // Parse arguments
-  const initialPrompt = args.length > 0 && args[0] !== "--help"
-    ? args.join(" ")
-    : undefined;
+  const initialPrompt =
+    args.length > 0 && args[0] !== "--help" ? args.join(" ") : undefined;
 
   if (args[0] === "--help" || args[0] === "-h") {
     console.log("Deep Agent CLI");
@@ -20,7 +20,9 @@ async function main() {
     console.log("");
     console.log("Examples:");
     console.log('  deep-agent "Explain the structure of this codebase"');
-    console.log('  deep-agent "Add a new endpoint to handle user authentication"');
+    console.log(
+      '  deep-agent "Add a new endpoint to handle user authentication"',
+    );
     console.log("");
     console.log("Keyboard shortcuts:");
     console.log("  esc           Abort current operation / exit");
@@ -31,12 +33,21 @@ async function main() {
   }
 
   try {
+    // Load agents.md files from the working directory hierarchy
+    const agentsMd = await loadAgentsMd(workingDirectory);
+
     await createTUI({
       initialPrompt,
       workingDirectory,
       header: {
         name: "Open Harness",
         version: "0.1.0",
+      },
+      agentOptions: {
+        workingDirectory,
+        ...(agentsMd?.content && {
+          customInstructions: agentsMd.content,
+        }),
       },
     });
   } catch (error) {
