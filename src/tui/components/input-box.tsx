@@ -423,7 +423,7 @@ export const InputBox = memo(function InputBox({
         borderBottom
         borderLeft={false}
         borderRight={false}
-        borderColor="gray"
+        borderColor="#555"
       >
         <Text color={disabled ? "gray" : "white"}>&gt; </Text>
         {disabled ? (
