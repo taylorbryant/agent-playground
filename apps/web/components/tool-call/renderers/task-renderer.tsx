@@ -183,7 +183,7 @@ export function TaskRenderer({
     <div className="my-2 rounded-lg border border-border bg-card p-3">
       <div
         className={cn(
-          "flex items-center gap-2",
+          "flex min-w-0 items-center gap-2",
           hasExpandableContent && "cursor-pointer",
         )}
         {...(hasExpandableContent && {

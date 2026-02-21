@@ -137,6 +137,9 @@
     border-radius: 0.25rem;
     font-size: 0.875em;
   }
+  [data-streamdown="inline-code"] {
+    overflow-wrap: anywhere;
+  }
 
   ::-webkit-scrollbar {
     width: 10px;

@@ -194,11 +194,13 @@ export function SharedChatContent({
                             )}
                           >
                             {m.role === "user" ? (
-                              <div className="max-w-[80%] rounded-3xl bg-secondary px-4 py-2">
-                                <p className="whitespace-pre-wrap">{p.text}</p>
+                              <div className="min-w-0 max-w-[80%] rounded-3xl bg-secondary px-4 py-2">
+                                <p className="whitespace-pre-wrap break-words">
+                                  {p.text}
+                                </p>
                               </div>
                             ) : (
-                              <div className="max-w-[80%]">
+                              <div className="min-w-0 max-w-[80%]">
                                 <Streamdown
                                   mode="static"
                                   isAnimating={false}
