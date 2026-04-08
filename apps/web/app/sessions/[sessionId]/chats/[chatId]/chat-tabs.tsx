@@ -70,19 +70,22 @@ export function ChatTabs({
 
   const handleConfirmDelete = useCallback(async () => {
     if (!deletingChatId) return;
-    try {
-      await deleteChat(deletingChatId);
-      // If deleting the active chat, switch to first remaining
-      if (deletingChatId === activeChatId) {
-        const remaining = chats.filter((c) => c.id !== deletingChatId);
-        if (remaining.length > 0) {
-          switchChat(remaining[0].id);
-        }
+    const idToDelete = deletingChatId;
+    setDeletingChatId(null);
+
+    // If deleting the active chat, navigate away first
+    if (idToDelete === activeChatId) {
+      const remaining = chats.filter((c) => c.id !== idToDelete);
+      if (remaining.length > 0) {
+        switchChat(remaining[0].id);
       }
+    }
+
+    try {
+      await deleteChat(idToDelete);
     } catch (err) {
       console.error("Failed to delete chat:", err);
     }
-    setDeletingChatId(null);
   }, [deletingChatId, activeChatId, chats, deleteChat, switchChat]);
 
   const canDelete = chats.length > 1;

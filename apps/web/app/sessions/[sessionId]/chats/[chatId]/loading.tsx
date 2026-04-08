@@ -4,16 +4,14 @@ import { Loader2 } from "lucide-react";
 
 export default function Loading() {
   return (
-    <>
+    <div className="flex h-full flex-col">
       {/* Messages area with centered spinner */}
-      <div className="relative flex-1 overflow-hidden">
-        <div className="flex h-full items-center justify-center">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        </div>
+      <div className="flex flex-1 items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
 
-      {/* Input area shell */}
-      <div className="p-4 pb-2 sm:pb-8">
+      {/* Input area shell pinned to bottom */}
+      <div className="shrink-0 p-4 pb-2 sm:pb-8">
         <div className="mx-auto max-w-4xl">
           <div className="overflow-hidden rounded-2xl bg-muted">
             <div className="px-4 pb-2 pt-3">
@@ -37,6 +35,6 @@ export default function Loading() {
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }
