@@ -1184,10 +1184,13 @@ export function GitPanel(props: GitPanelProps) {
     diffSummary &&
     (diffSummary.totalAdditions > 0 || diffSummary.totalDeletions > 0);
 
+  // Show the Git tab only when there's at least one commit (branch has diverged) or a PR exists
+  const showGitTab = hasDiff || hasExistingPr;
+
   return (
     <div className="flex h-full w-72 shrink-0 flex-col border-l border-border bg-background xl:w-80">
-      {/* Panel top bar: PR link or branch name */}
-      <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+      {/* Panel top bar: PR link or branch name — matches session header height */}
+      <div className="flex min-h-[44px] items-center justify-between gap-2 border-b border-border px-3">
         {/* Left: PR link or repo info */}
         <div className="flex min-w-0 items-center gap-2">
           {hasExistingPr && existingPrUrl ? (
@@ -1225,15 +1228,21 @@ export function GitPanel(props: GitPanelProps) {
         </div>
       </div>
 
-      {/* Tab bar */}
-      <div className="flex items-center gap-0.5 border-b border-border px-1">
-        {(["code", "diff", "pr"] as const).map((tab) => (
+      {/* Tab bar — matches chat tabs sub-header height */}
+      <div className="flex items-center gap-0.5 border-b border-border bg-muted/30 px-1 py-1">
+        {(
+          [
+            "code" as const,
+            "diff" as const,
+            ...(showGitTab ? (["pr"] as const) : []),
+          ]
+        ).map((tab) => (
           <button
             key={tab}
             type="button"
             onClick={() => setGitPanelTab(tab)}
             className={cn(
-              "rounded-md px-2.5 py-2 text-xs font-medium transition-colors",
+              "rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
               gitPanelTab === tab
                 ? "bg-secondary text-secondary-foreground"
                 : "text-muted-foreground hover:bg-muted/50",
@@ -1245,7 +1254,7 @@ export function GitPanel(props: GitPanelProps) {
                 ? "Changes"
                 : "Git"}
             {tab === "diff" && hasDiffChanges && (
-              <span className="ml-1 text-[10px] text-muted-foreground">
+              <span className="ml-1 text-[10px] text-muted-foreground font-mono">
                 {diffFiles?.length ?? 0}
               </span>
             )}
