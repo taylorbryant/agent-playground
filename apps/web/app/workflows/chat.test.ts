@@ -16,7 +16,15 @@ const spies = {
   runAutoCommitStep: mock(() =>
     Promise.resolve({ committed: false, pushed: false }),
   ),
-  runAutoCreatePrStep: mock(() => Promise.resolve()),
+  runAutoCreatePrStep: mock(() =>
+    Promise.resolve({
+      created: true,
+      syncedExisting: false,
+      skipped: false,
+      prNumber: 42,
+      prUrl: "https://github.com/acme/repo/pull/42",
+    }),
+  ),
 };
 
 // Track what the agent stream yields
@@ -36,6 +44,7 @@ let agentRequestBody: unknown;
 let agentResponseHeaders: Record<string, string> | undefined;
 let agentResponseBody: unknown;
 let agentProviderMetadata: Record<string, unknown> | undefined;
+let agentInputMessages: unknown;
 
 function buildAgentSteps() {
   return [
@@ -102,7 +111,8 @@ mock.module("./chat-post-finish", () => spies);
 mock.module("@/app/config", () => ({
   webAgent: {
     tools: {},
-    stream: async () => {
+    stream: async ({ messages }: { messages: unknown }) => {
+      agentInputMessages = messages;
       return {
         toUIMessageStream: (opts: {
           sendStart?: boolean;
@@ -171,9 +181,47 @@ mock.module("@/app/config", () => ({
 }));
 
 mock.module("ai", () => ({
-  convertToModelMessages: async (msgs: unknown[]) => msgs,
+  convertToModelMessages: async (
+    msgs: Array<Record<string, unknown>>,
+    options?: { convertDataPart?: (part: Record<string, unknown>) => unknown },
+  ) =>
+    msgs.map((message) => {
+      const parts = Array.isArray(message.parts) ? message.parts : [];
+      const content = parts.flatMap((part) => {
+        if (typeof part !== "object" || part === null) {
+          return [];
+        }
+
+        if (part.type === "text" && typeof part.text === "string") {
+          return [{ type: "text", text: part.text }];
+        }
+
+        if (
+          typeof part.type === "string" &&
+          part.type.startsWith("data-") &&
+          options?.convertDataPart
+        ) {
+          const convertedPart = options.convertDataPart(
+            part as Record<string, unknown>,
+          );
+          return convertedPart === undefined ? [] : [convertedPart];
+        }
+
+        return [];
+      });
+
+      return {
+        role: message.role,
+        content,
+      };
+    }),
   generateId: () => "gen-id-1",
   isToolUIPart: (part: { type: string }) => part.type === "tool-invocation",
+  pruneMessages: ({ messages }: { messages: Array<Record<string, unknown>> }) =>
+    messages.filter((message) => {
+      const content = message.content;
+      return !Array.isArray(content) || content.length > 0;
+    }),
 }));
 
 mock.module("@open-harness/agent", () => ({}));
@@ -219,6 +267,7 @@ beforeEach(() => {
   agentResponseHeaders = undefined;
   agentResponseBody = undefined;
   agentProviderMetadata = undefined;
+  agentInputMessages = undefined;
   streamOnFinishCallback = undefined;
   Object.values(spies).forEach((s) => s.mockClear());
 });
@@ -513,6 +562,151 @@ describe("runAgentWorkflow", () => {
         repoName: "repo",
       }),
     );
+  });
+
+  test("streams and persists resolved git data parts", async () => {
+    spies.runAutoCommitStep.mockImplementationOnce(() =>
+      Promise.resolve({
+        committed: true,
+        pushed: true,
+        commitMessage: "feat: add auto git status",
+        commitSha: "abc123",
+      }),
+    );
+    spies.runAutoCreatePrStep.mockImplementationOnce(() =>
+      Promise.resolve({
+        created: true,
+        syncedExisting: false,
+        skipped: false,
+        prNumber: 101,
+        prUrl: "https://github.com/acme/repo/pull/101",
+      }),
+    );
+
+    await runAgentWorkflow(
+      makeOptions({
+        autoCommitEnabled: true,
+        autoCreatePrEnabled: true,
+        repoOwner: "acme",
+        repoName: "repo",
+      }),
+    );
+
+    expect(
+      writtenChunks.filter((chunk) => chunk.type === "data-commit"),
+    ).toEqual([
+      {
+        type: "data-commit",
+        id: "gen-id-1:commit",
+        data: { status: "pending" },
+      },
+      {
+        type: "data-commit",
+        id: "gen-id-1:commit",
+        data: {
+          status: "success",
+          committed: true,
+          pushed: true,
+          commitMessage: "feat: add auto git status",
+          commitSha: "abc123",
+          url: "https://github.com/acme/repo/commit/abc123",
+        },
+      },
+    ]);
+    expect(writtenChunks.filter((chunk) => chunk.type === "data-pr")).toEqual([
+      {
+        type: "data-pr",
+        id: "gen-id-1:pr",
+        data: { status: "pending" },
+      },
+      {
+        type: "data-pr",
+        id: "gen-id-1:pr",
+        data: {
+          status: "success",
+          created: true,
+          syncedExisting: false,
+          prNumber: 101,
+          url: "https://github.com/acme/repo/pull/101",
+        },
+      },
+    ]);
+
+    const persistCalls = spies.persistAssistantMessage.mock
+      .calls as unknown[][];
+    const persistedMessage = persistCalls.at(-1)?.[1] as {
+      parts: Array<Record<string, unknown>>;
+    };
+
+    expect(persistedMessage.parts).toEqual(
+      expect.arrayContaining([
+        {
+          type: "data-commit",
+          id: "gen-id-1:commit",
+          data: {
+            status: "success",
+            committed: true,
+            pushed: true,
+            commitMessage: "feat: add auto git status",
+            commitSha: "abc123",
+            url: "https://github.com/acme/repo/commit/abc123",
+          },
+        },
+        {
+          type: "data-pr",
+          id: "gen-id-1:pr",
+          data: {
+            status: "success",
+            created: true,
+            syncedExisting: false,
+            prNumber: 101,
+            url: "https://github.com/acme/repo/pull/101",
+          },
+        },
+      ]),
+    );
+  });
+
+  test("prunes synthetic git-only assistant messages before the next model call", async () => {
+    await runAgentWorkflow(
+      makeOptions({
+        messages: [
+          {
+            id: "user-1",
+            role: "user",
+            parts: [{ type: "text", text: "Hello" }],
+          },
+          {
+            id: "assistant-git-1",
+            role: "assistant",
+            parts: [
+              {
+                type: "data-commit",
+                id: "assistant-git-1:commit",
+                data: { status: "success" },
+              },
+            ],
+            metadata: {},
+          },
+          {
+            id: "user-2",
+            role: "user",
+            parts: [{ type: "text", text: "What changed?" }],
+          },
+        ],
+      }),
+    );
+
+    expect(agentInputMessages).toEqual([
+      {
+        role: "user",
+        content: [{ type: "text", text: "Hello" }],
+      },
+      {
+        role: "user",
+        content: [{ type: "text", text: "What changed?" }],
+      },
+    ]);
   });
 
   test("skips auto PR creation when auto-commit does not push the latest commit", async () => {

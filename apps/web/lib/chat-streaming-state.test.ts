@@ -7,6 +7,7 @@ mock.module("ai", () => ({
 }));
 
 const {
+  getGitFinalizationState,
   hasRenderableAssistantPart,
   isChatInFlight,
   shouldKeepCollapsedReasoningStreaming,
@@ -48,6 +49,10 @@ describe("chat streaming state", () => {
       text: "Planning the next step",
       state: "done",
     } as unknown as AssistantPart;
+    const gitDataPart = {
+      type: "data-commit",
+      data: { status: "pending" },
+    } as unknown as AssistantPart;
 
     expect(hasRenderableAssistantPart(emptyTextPart)).toBe(false);
     expect(hasRenderableAssistantPart(textPart)).toBe(true);
@@ -56,6 +61,7 @@ describe("chat streaming state", () => {
     expect(hasRenderableAssistantPart(completedReasoningWithTextPart)).toBe(
       true,
     );
+    expect(hasRenderableAssistantPart(gitDataPart)).toBe(true);
   });
 
   test("does not show thinking when submitted already has assistant output", () => {
@@ -84,6 +90,78 @@ describe("chat streaming state", () => {
         lastMessageRole: "assistant",
       }),
     ).toBe(true);
+  });
+
+  test("detects non-cancellable git finalization once git data arrives on an in-flight assistant message", () => {
+    expect(
+      getGitFinalizationState({
+        status: "streaming",
+        lastMessageRole: "assistant",
+        lastMessageParts: [
+          {
+            type: "data-commit",
+            data: { status: "pending" },
+          } as unknown as Parameters<typeof hasRenderableAssistantPart>[0],
+        ],
+      }),
+    ).toEqual({
+      isFinalizing: true,
+      label: "Creating commit…",
+    });
+
+    expect(
+      getGitFinalizationState({
+        status: "streaming",
+        lastMessageRole: "assistant",
+        lastMessageParts: [
+          {
+            type: "data-commit",
+            data: { status: "success" },
+          } as unknown as Parameters<typeof hasRenderableAssistantPart>[0],
+          {
+            type: "data-pr",
+            data: { status: "pending" },
+          } as unknown as Parameters<typeof hasRenderableAssistantPart>[0],
+        ],
+      }),
+    ).toEqual({
+      isFinalizing: true,
+      label: "Creating pull request…",
+    });
+
+    expect(
+      getGitFinalizationState({
+        status: "streaming",
+        lastMessageRole: "assistant",
+        lastMessageParts: [
+          {
+            type: "data-commit",
+            data: { status: "success" },
+          } as unknown as Parameters<typeof hasRenderableAssistantPart>[0],
+        ],
+      }),
+    ).toEqual({
+      isFinalizing: true,
+      label: "Finalizing git actions…",
+    });
+  });
+
+  test("does not treat stale git data on a non-streaming message as finalization", () => {
+    expect(
+      getGitFinalizationState({
+        status: "ready",
+        lastMessageRole: "assistant",
+        lastMessageParts: [
+          {
+            type: "data-commit",
+            data: { status: "pending" },
+          } as unknown as Parameters<typeof hasRenderableAssistantPart>[0],
+        ],
+      }),
+    ).toEqual({
+      isFinalizing: false,
+      label: null,
+    });
   });
 
   test("keeps collapsed reasoning blocks streaming until later content appears", () => {
