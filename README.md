@@ -6,6 +6,8 @@ Open Agents is an open-source reference app for building and running background 
 
 The repo is meant to be forked and adapted, not treated as a black box.
 
+This fork also supports a local mode that replaces Vercel auth, Vercel workflows, AI Gateway model routing, and Vercel sandboxes with local equivalents so you can run it on your own machine. It can run either a host-shell local sandbox or a Docker-backed sandbox for internal deployments.
+
 ## What it is
 
 Open Agents is a three-layer system:
@@ -34,6 +36,7 @@ That separation is the main point of the project:
 - chat-driven coding agent with file, search, shell, task, skill, and web tools
 - durable multi-step execution with Workflow SDK-backed runs, streaming, and cancellation
 - isolated Vercel sandboxes with snapshot-based resume
+- local mode with local auth, host-shell sandboxes, and inline agent execution
 - repo cloning and branch work inside the sandbox
 - optional auto-commit, push, and PR creation after a successful run
 - session sharing via read-only links
@@ -61,6 +64,8 @@ These are the hard requirements for the app to boot and load server state:
 POSTGRES_URL=
 JWE_SECRET=
 ```
+
+`POSTGRES_URL` is still required in local mode. SQLite is not wired into the app yet.
 
 ### Required to sign in and actually use the hosted app
 
@@ -167,14 +172,105 @@ Recommended path: deploy this repo at the repo root on Vercel, then layer on aut
    cp apps/web/.env.example apps/web/.env
    ```
 
-3. Fill in the required values in `apps/web/.env`.
-4. Start the app:
+3. Choose a runtime mode.
+
+   Hosted-style setup:
+
+   ```env
+   POSTGRES_URL=
+   JWE_SECRET=
+   ENCRYPTION_KEY=
+   NEXT_PUBLIC_VERCEL_APP_CLIENT_ID=
+   VERCEL_APP_CLIENT_SECRET=
+   ```
+
+   Local mode without Vercel services:
+
+   ```env
+   POSTGRES_URL=
+   JWE_SECRET=
+   ENCRYPTION_KEY=
+   OPEN_HARNESS_LOCAL_MODE=1
+   NEXT_PUBLIC_OPEN_HARNESS_LOCAL_MODE=1
+   OPEN_HARNESS_SANDBOX_BACKEND=local
+   OPEN_HARNESS_LOCAL_WORKSPACE_PATH=/absolute/path/to/your/workspace
+   OPENAI_API_KEY=...          # for openai/* models
+   ANTHROPIC_API_KEY=...       # for anthropic/* models
+   ```
+
+4. Optional local-mode overrides:
+
+   ```env
+   OPEN_HARNESS_LOCAL_AUTH_EMAIL=local@open-harness.dev
+   OPEN_HARNESS_LOCAL_AUTH_USERNAME=local
+   OPEN_HARNESS_LOCAL_AUTH_NAME=Local User
+   OPEN_HARNESS_LOCAL_AUTH_AVATAR_URL=https://avatar.vercel.sh/local-user
+   OPEN_HARNESS_LOCAL_AUTH_ID=local@open-harness.dev
+   OPEN_HARNESS_LOCAL_MODELS=openai/gpt-5.4,anthropic/claude-haiku-4.5
+   ```
+
+   If `OPEN_HARNESS_LOCAL_WORKSPACE_PATH` is unset, local sandboxes default to the repo root.
+
+5. Optional Docker-backed sandbox mode:
+
+   ```env
+   OPEN_HARNESS_SANDBOX_BACKEND=docker
+   OPEN_HARNESS_DOCKER_IMAGE=your-internal-sandbox-image
+   OPEN_HARNESS_DOCKER_PREVIEW_HOST=127.0.0.1
+   ```
+
+   The Docker image should include at least `sh`, `git`, and the tools you expect the agent to use for your monorepo, typically `bun`, `node`, and `code-server` if you want the built-in editor route to work. The app still stores workspace files on the host and mounts that workspace into each session container at `/workspace`.
+
+6. Optional remote Docker sandbox-control mode:
+
+   ```env
+   OPEN_HARNESS_SANDBOX_BACKEND=remote-docker
+   OPEN_HARNESS_SANDBOX_CONTROL_URL=http://127.0.0.1:3020
+   ```
+
+   Start the control-plane scaffold in a second terminal:
+
+   ```bash
+   bun run --cwd apps/sandbox-control dev
+   ```
+
+   This initial scaffold only supports sandbox lifecycle and preview-port metadata. Command execution and file APIs still need to be implemented before it can replace the local Docker backend end to end.
+
+7. Start the app:
 
    ```bash
    bun run web
    ```
 
+8. In local mode, use the normal sign-in button or go directly to `/api/auth/signin/local`.
+
 If you already have a linked Vercel project, you can still pull env vars locally with `vc env pull`, but setup is now intentionally manual so you can see exactly which values matter.
+
+## Local mode behavior
+
+When `OPEN_HARNESS_LOCAL_MODE=1` is enabled:
+
+- sign-in uses a local session instead of Vercel OAuth
+- chat requests run the agent inline instead of starting a durable Vercel Workflow
+- the sandbox can use your host shell (`local`), a local Docker daemon (`docker`), or a remote sandbox control service (`remote-docker`) instead of `@vercel/sandbox`
+- model routing uses direct OpenAI / Anthropic providers when their API keys are present
+
+Current limitations:
+
+- the database is still PostgreSQL-backed; SQLite migration is not implemented yet
+- local mode does not provide durable workflow resume/reconnect semantics
+- Vercel-specific features and marketing copy outside the core runtime are still present in parts of the app
+
+### Remote Docker sandbox control
+
+You can point the web app at a separate internal sandbox control service:
+
+```env
+OPEN_HARNESS_SANDBOX_BACKEND=remote-docker
+OPEN_HARNESS_SANDBOX_CONTROL_URL=http://127.0.0.1:3020
+```
+
+The scaffolded control service lives in `apps/sandbox-control` and currently supports sandbox create/get/delete, timeout extension, and preview port lookup. Command execution and file APIs are intentionally stubbed for the next implementation pass.
 
 ## OAuth and integration setup
 

@@ -5,6 +5,7 @@ import {
   requireOwnedChatById,
 } from "@/app/api/chat/_lib/chat-context";
 import type { WebAgentUIMessage } from "@/app/types";
+import { hasActiveLocalRun, isLocalRunId } from "@/lib/chat/local-run-registry";
 import { updateChatActiveStreamId } from "@/lib/db/sessions";
 import { createCancelableReadableStream } from "@/lib/chat/create-cancelable-readable-stream";
 
@@ -38,6 +39,15 @@ export async function GET(_request: Request, context: RouteContext) {
   }
 
   const runId = chat.activeStreamId;
+
+  if (isLocalRunId(runId)) {
+    if (hasActiveLocalRun(runId)) {
+      return new Response(null, { status: 204 });
+    }
+
+    await updateChatActiveStreamId(chatId, null);
+    return new Response(null, { status: 204 });
+  }
 
   try {
     const run = getRun(runId);

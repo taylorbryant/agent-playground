@@ -7,6 +7,8 @@ import {
   type JSONValue,
   type LanguageModel,
 } from "ai";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
 import type { AnthropicLanguageModelOptions } from "@ai-sdk/anthropic";
 import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
 
@@ -98,7 +100,94 @@ export interface GatewayOptions {
   providerOptionsOverrides?: ProviderOptionsByProvider;
 }
 
+export interface AvailableModelDescriptor {
+  id: GatewayModelId;
+  name: string;
+  modelType: "language";
+}
+
+type DirectLanguageModel =
+  | ReturnType<ReturnType<typeof createOpenAI>>
+  | ReturnType<ReturnType<typeof createAnthropic>>;
+
 export type { GatewayModelId, LanguageModel, JSONValue };
+
+function isLocalModeEnabled(): boolean {
+  return (
+    process.env.OPEN_HARNESS_LOCAL_MODE === "1" ||
+    process.env.NEXT_PUBLIC_OPEN_HARNESS_LOCAL_MODE === "1"
+  );
+}
+
+function getConfiguredLocalModelIds(): GatewayModelId[] {
+  const configured = process.env.OPEN_HARNESS_LOCAL_MODELS?.split(",")
+    .map((value) => value.trim())
+    .filter((value): value is GatewayModelId => value.length > 0);
+
+  if (configured && configured.length > 0) {
+    return configured;
+  }
+
+  const defaults: GatewayModelId[] = [];
+
+  if (process.env.OPENAI_API_KEY) {
+    defaults.push("openai/gpt-5.4");
+  }
+
+  if (process.env.ANTHROPIC_API_KEY) {
+    defaults.push("anthropic/claude-haiku-4.5");
+  }
+
+  return defaults;
+}
+
+function formatModelName(modelId: string): string {
+  const [, rawName = modelId] = modelId.split("/", 2);
+  return rawName
+    .split(/[-_]/g)
+    .filter((part) => part.length > 0)
+    .map((part) => part[0]?.toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+export function getDirectProviderAvailableModels(): AvailableModelDescriptor[] {
+  if (!isLocalModeEnabled()) {
+    return [];
+  }
+
+  return getConfiguredLocalModelIds().map((id) => ({
+    id,
+    name: formatModelName(id),
+    modelType: "language",
+  }));
+}
+
+function getDirectProviderModel(
+  modelId: GatewayModelId,
+): DirectLanguageModel | null {
+  if (!isLocalModeEnabled()) {
+    return null;
+  }
+
+  const [provider, modelName] = modelId.split("/", 2);
+  if (!provider || !modelName) {
+    return null;
+  }
+
+  if (provider === "openai" && process.env.OPENAI_API_KEY) {
+    return createOpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    })(modelName);
+  }
+
+  if (provider === "anthropic" && process.env.ANTHROPIC_API_KEY) {
+    return createAnthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY,
+    })(modelName);
+  }
+
+  return null;
+}
 
 export function shouldApplyOpenAIReasoningDefaults(modelId: string): boolean {
   return modelId.startsWith("openai/gpt-5");
@@ -173,6 +262,26 @@ export function gateway(
   options: GatewayOptions = {},
 ): LanguageModel {
   const { config, providerOptionsOverrides } = options;
+
+  const directModel = getDirectProviderModel(modelId);
+  if (directModel && !config) {
+    let model = directModel;
+    const providerOptions = getProviderOptionsForModel(
+      modelId,
+      providerOptionsOverrides,
+    );
+
+    if (Object.keys(providerOptions).length > 0) {
+      model = wrapLanguageModel({
+        model,
+        middleware: defaultSettingsMiddleware({
+          settings: { providerOptions },
+        }),
+      });
+    }
+
+    return model as LanguageModel;
+  }
 
   // Use custom gateway config or default AI SDK gateway
   const baseGateway = config

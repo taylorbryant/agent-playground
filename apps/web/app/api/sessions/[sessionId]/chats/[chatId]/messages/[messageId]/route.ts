@@ -3,6 +3,7 @@ import {
   requireAuthenticatedUser,
   requireOwnedSessionChat,
 } from "@/app/api/sessions/_lib/session-context";
+import { hasActiveLocalRun, isLocalRunId } from "@/lib/chat/local-run-registry";
 import {
   deleteChatMessageAndFollowing,
   updateChatActiveStreamId,
@@ -45,24 +46,37 @@ export async function DELETE(req: Request, context: RouteContext) {
   const { chat } = chatContext;
 
   if (chat.activeStreamId) {
-    // Check if the workflow is actually still running. If it terminated
-    // without cleaning up (e.g. due to a failure), clear the stale ID
-    // and allow the delete to proceed.
-    try {
-      const run = getRun(chat.activeStreamId);
-      const status = await run.status;
-      if (status === "running" || status === "pending") {
+    if (isLocalRunId(chat.activeStreamId)) {
+      if (hasActiveLocalRun(chat.activeStreamId)) {
         return Response.json(
           { error: "Cannot delete messages while a response is streaming" },
           { status: 409 },
         );
       }
-    } catch {
-      // Workflow run not found — treat as stale.
+
+      await updateChatActiveStreamId(chatId, null);
     }
 
-    // Workflow is terminal or not found — clear the stale activeStreamId.
-    await updateChatActiveStreamId(chatId, null);
+    // Check if the workflow is actually still running. If it terminated
+    // without cleaning up (e.g. due to a failure), clear the stale ID
+    // and allow the delete to proceed.
+    if (!isLocalRunId(chat.activeStreamId)) {
+      try {
+        const run = getRun(chat.activeStreamId);
+        const status = await run.status;
+        if (status === "running" || status === "pending") {
+          return Response.json(
+            { error: "Cannot delete messages while a response is streaming" },
+            { status: 409 },
+          );
+        }
+      } catch {
+        // Workflow run not found — treat as stale.
+      }
+
+      // Workflow is terminal or not found — clear the stale activeStreamId.
+      await updateChatActiveStreamId(chatId, null);
+    }
   }
 
   const result = await deleteChatMessageAndFollowing(chatId, messageId);

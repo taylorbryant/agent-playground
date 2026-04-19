@@ -6,12 +6,9 @@ import {
   getSessionsWithUnreadByUserId,
   getUsedSessionTitles,
 } from "@/lib/db/sessions";
-import {
-  getVercelProjectLinkByRepo,
-  upsertVercelProjectLink,
-} from "@/lib/db/vercel-project-links";
 import { getUserPreferences } from "@/lib/db/user-preferences";
 import { sanitizeUserPreferencesForSession } from "@/lib/model-access";
+import { getConfiguredSandboxBackend } from "@/lib/sandbox/backend";
 import {
   isValidGitHubRepoName,
   isValidGitHubRepoOwner,
@@ -23,12 +20,6 @@ import {
   MANAGED_TEMPLATE_TRIAL_SESSION_LIMIT,
   MANAGED_TEMPLATE_TRIAL_SESSION_LIMIT_ERROR,
 } from "@/lib/managed-template-trial";
-import { listMatchingVercelProjects } from "@/lib/vercel/projects";
-import { getUserVercelToken } from "@/lib/vercel/token";
-import {
-  vercelProjectSelectionSchema,
-  type VercelProjectSelection,
-} from "@/lib/vercel/types";
 
 interface CreateSessionRequest {
   title?: string;
@@ -37,10 +28,9 @@ interface CreateSessionRequest {
   branch?: string;
   cloneUrl?: string;
   isNewBranch?: boolean;
-  sandboxType?: "vercel";
+  sandboxType?: "local" | "docker" | "remote-docker";
   autoCommitPush?: boolean;
   autoCreatePr?: boolean;
-  vercelProject?: VercelProjectSelection | null;
 }
 
 function generateBranchName(username: string, name?: string | null): string {
@@ -189,7 +179,12 @@ export async function POST(req: Request) {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  if (body.sandboxType && body.sandboxType !== "vercel") {
+  if (
+    body.sandboxType !== undefined &&
+    body.sandboxType !== "local" &&
+    body.sandboxType !== "docker" &&
+    body.sandboxType !== "remote-docker"
+  ) {
     return Response.json({ error: "Invalid sandbox type" }, { status: 400 });
   }
 
@@ -231,32 +226,16 @@ export async function POST(req: Request) {
     return Response.json({ error: "Invalid repository name" }, { status: 400 });
   }
 
-  let explicitVercelProject: VercelProjectSelection | null | undefined;
-  if (body.vercelProject === null) {
-    explicitVercelProject = null;
-  } else if (body.vercelProject !== undefined) {
-    const parsedProject = vercelProjectSelectionSchema.safeParse(
-      body.vercelProject,
-    );
-    if (!parsedProject.success) {
-      return Response.json(
-        { error: "Invalid Vercel project" },
-        { status: 400 },
-      );
-    }
-    explicitVercelProject = parsedProject.data;
-  }
-
   const {
     repoOwner,
     repoName,
     branch,
     cloneUrl,
     isNewBranch,
-    sandboxType = "vercel",
     autoCommitPush,
     autoCreatePr,
   } = body;
+  const sandboxType = getConfiguredSandboxBackend();
 
   let finalBranch = branch;
   if (isNewBranch) {
@@ -266,53 +245,6 @@ export async function POST(req: Request) {
   try {
     const titlePromise = resolveSessionTitle(body, session.user.id);
     const preferencesPromise = getUserPreferences(session.user.id);
-
-    let resolvedVercelProject: VercelProjectSelection | null = null;
-    const hasRepo = Boolean(repoOwner && repoName);
-    if (hasRepo && repoOwner && repoName) {
-      if (explicitVercelProject) {
-        const vercelToken = await getUserVercelToken(session.user.id);
-        if (!vercelToken) {
-          return Response.json(
-            { error: "Connect Vercel to select a Vercel project" },
-            { status: 403 },
-          );
-        }
-
-        const matchingProjects = await listMatchingVercelProjects({
-          token: vercelToken,
-          repoOwner,
-          repoName,
-        });
-        const matchedProject =
-          matchingProjects.find(
-            (project) => project.projectId === explicitVercelProject.projectId,
-          ) ?? null;
-        if (!matchedProject) {
-          return Response.json(
-            {
-              error:
-                "Selected Vercel project no longer matches this repository",
-            },
-            { status: 400 },
-          );
-        }
-
-        await upsertVercelProjectLink({
-          userId: session.user.id,
-          repoOwner,
-          repoName,
-          project: matchedProject,
-        });
-        resolvedVercelProject = matchedProject;
-      } else if (explicitVercelProject === undefined) {
-        resolvedVercelProject = await getVercelProjectLinkByRepo(
-          session.user.id,
-          repoOwner,
-          repoName,
-        );
-      }
-    }
 
     const [title, rawPreferences] = await Promise.all([
       titlePromise,
@@ -336,10 +268,10 @@ export async function POST(req: Request) {
         repoName,
         branch: finalBranch,
         cloneUrl,
-        vercelProjectId: resolvedVercelProject?.projectId ?? null,
-        vercelProjectName: resolvedVercelProject?.projectName ?? null,
-        vercelTeamId: resolvedVercelProject?.teamId ?? null,
-        vercelTeamSlug: resolvedVercelProject?.teamSlug ?? null,
+        vercelProjectId: null,
+        vercelProjectName: null,
+        vercelTeamId: null,
+        vercelTeamSlug: null,
         isNewBranch: isNewBranch ?? false,
         autoCommitPushOverride: effectiveAutoCommitPush,
         autoCreatePrOverride: effectiveAutoCommitPush

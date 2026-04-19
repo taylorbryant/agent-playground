@@ -2848,26 +2848,16 @@ export function SessionChatContent({
 
   const hasRepo = Boolean(session.cloneUrl);
   const hasExistingPr = session.prNumber != null;
-  const previewLookupBranch =
-    gitStatus?.branch && gitStatus.branch !== "HEAD"
-      ? gitStatus.branch
-      : session.branch;
-  const hasBranchPreviewLookup = Boolean(
-    session.vercelProjectId && previewLookupBranch,
-  );
   const existingPrUrl =
     hasExistingPr && session.repoOwner && session.repoName
       ? `https://github.com/${session.repoOwner}/${session.repoName}/pull/${session.prNumber}`
       : null;
   const prDeploymentQuery = new URLSearchParams(
-    Object.entries({
-      ...(hasExistingPr ? { prNumber: String(session.prNumber) } : {}),
-      ...(previewLookupBranch ? { branch: previewLookupBranch } : {}),
-    }),
+    hasExistingPr ? { prNumber: String(session.prNumber) } : {},
   ).toString();
   const { data: prDeploymentData, mutate: refreshPrDeployment } =
     useSWR<PrDeploymentResponse>(
-      hasExistingPr || hasBranchPreviewLookup
+      hasExistingPr
         ? `/api/sessions/${session.id}/pr-deployment${
             prDeploymentQuery ? `?${prDeploymentQuery}` : ""
           }`
@@ -2877,10 +2867,10 @@ export function SessionChatContent({
         revalidateOnFocus: true,
         revalidateOnReconnect: true,
         // Poll while we're still waiting for the first deployment, or while a
-        // branch preview is rolling forward to a newer deployment after a push.
+        // PR preview is rolling forward to a newer deployment after a push.
         refreshInterval: (latestData) =>
           getPrDeploymentRefreshInterval({
-            shouldPoll: hasExistingPr || hasBranchPreviewLookup,
+            shouldPoll: hasExistingPr,
             deploymentUrl: latestData?.deploymentUrl,
             documentHasFocus:
               typeof document === "undefined" ? true : document.hasFocus(),
@@ -2891,10 +2881,9 @@ export function SessionChatContent({
     );
   const prDeploymentUrl = prDeploymentData?.deploymentUrl ?? null;
   const buildingDeploymentUrl = prDeploymentData?.buildingDeploymentUrl ?? null;
-  const failedDeploymentUrl = prDeploymentData?.failedDeploymentUrl ?? null;
-
+  const failedDeploymentUrl = null;
   useEffect(() => {
-    if (!hasExistingPr && !hasBranchPreviewLookup) {
+    if (!hasExistingPr) {
       if (branchPreviewUrlChangeBaseline !== undefined) {
         setBranchPreviewUrlChangeBaseline(undefined);
       }
@@ -2908,49 +2897,28 @@ export function SessionChatContent({
     if (prDeploymentUrl !== branchPreviewUrlChangeBaseline) {
       setBranchPreviewUrlChangeBaseline(undefined);
     }
-  }, [
-    hasExistingPr,
-    hasBranchPreviewLookup,
-    branchPreviewUrlChangeBaseline,
-    prDeploymentUrl,
-  ]);
+  }, [hasExistingPr, branchPreviewUrlChangeBaseline, prDeploymentUrl]);
 
   const isDeploymentStale = branchPreviewUrlChangeBaseline !== undefined;
-  const isDeploymentFailed =
-    !prDeploymentUrl &&
-    !buildingDeploymentUrl &&
-    !hasExistingPr &&
-    Boolean(failedDeploymentUrl);
+  const isDeploymentFailed = false;
   const previewDeploymentTargetUrl =
-    (isDeploymentStale ? buildingDeploymentUrl : null) ??
-    prDeploymentUrl ??
-    (isDeploymentFailed ? failedDeploymentUrl : null);
+    (isDeploymentStale ? buildingDeploymentUrl : null) ?? prDeploymentUrl;
   const showHeaderActions =
     canRunDevServer || Boolean(previewDeploymentTargetUrl);
 
   // When auto-commit lands (transitions from committing to clean), mark the
   // current preview deployment as stale so the UI shows "Deploying…" until
-  // the new Vercel build finishes.
+  // the refreshed PR preview finishes building.
   const prevIsAutoCommittingRef = useRef(isAutoCommitting);
   useEffect(() => {
     const wasAutoCommitting = prevIsAutoCommittingRef.current;
     prevIsAutoCommittingRef.current = isAutoCommitting;
 
-    if (
-      wasAutoCommitting &&
-      !isAutoCommitting &&
-      (hasExistingPr || hasBranchPreviewLookup)
-    ) {
+    if (wasAutoCommitting && !isAutoCommitting && hasExistingPr) {
       setBranchPreviewUrlChangeBaseline(prDeploymentUrl);
       refreshPrDeployment().catch(() => undefined);
     }
-  }, [
-    isAutoCommitting,
-    hasExistingPr,
-    hasBranchPreviewLookup,
-    prDeploymentUrl,
-    refreshPrDeployment,
-  ]);
+  }, [isAutoCommitting, hasExistingPr, prDeploymentUrl, refreshPrDeployment]);
 
   const hasUncommittedGitChanges = gitStatus?.hasUncommittedChanges ?? false;
   const hasUnpushedCommits = gitStatus?.hasUnpushedCommits ?? false;
@@ -2988,7 +2956,7 @@ export function SessionChatContent({
   const hasOpenPr = hasExistingPr && session.prStatus === "open";
   const canCloseAndArchive = hasOpenPr && !isArchived;
   const handleCommitted = useCallback(async () => {
-    if (hasExistingPr || hasBranchPreviewLookup) {
+    if (hasExistingPr) {
       setBranchPreviewUrlChangeBaseline(prDeploymentUrl);
     }
 
@@ -2999,12 +2967,11 @@ export function SessionChatContent({
       checkBranchAndPr().catch(() => undefined),
     ]);
 
-    if (hasExistingPr || hasBranchPreviewLookup) {
+    if (hasExistingPr) {
       await refreshPrDeployment().catch(() => undefined);
     }
   }, [
     hasExistingPr,
-    hasBranchPreviewLookup,
     prDeploymentUrl,
     refreshGitStatus,
     refreshDiff,

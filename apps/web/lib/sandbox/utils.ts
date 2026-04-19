@@ -124,6 +124,29 @@ function hasRuntimeState(state: SandboxState): boolean {
   return hasResumableSandboxState(state);
 }
 
+function getWorkspaceFields(state: SandboxState): Partial<{
+  workspacePath: string;
+  managedWorkspace: boolean;
+  source: unknown;
+}> {
+  if (
+    (state.type === "local" ||
+      state.type === "docker" ||
+      state.type === "remote-docker") &&
+    "workspacePath" in state &&
+    state.workspacePath
+  ) {
+    return {
+      workspacePath: state.workspacePath,
+      managedWorkspace:
+        "managedWorkspace" in state ? state.managedWorkspace : undefined,
+      source: "source" in state ? state.source : undefined,
+    };
+  }
+
+  return {};
+}
+
 /**
  * Clear sandbox runtime state while preserving durable resume state when available.
  */
@@ -139,6 +162,7 @@ export function clearSandboxState(
     type: state.type,
     ...(sandboxName ? { sandboxName } : {}),
     ...(sandboxId ? { sandboxId } : {}),
+    ...getWorkspaceFields(state),
   } as SandboxState;
 }
 
@@ -150,7 +174,10 @@ export function clearSandboxResumeState(
 ): SandboxState | null {
   if (!state) return null;
 
-  return { type: state.type } as SandboxState;
+  return {
+    type: state.type,
+    ...getWorkspaceFields(state),
+  } as SandboxState;
 }
 
 /**

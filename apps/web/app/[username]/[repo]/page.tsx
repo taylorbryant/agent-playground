@@ -5,11 +5,12 @@ import {
   createSessionWithInitialChat,
   getUsedSessionTitles,
 } from "@/lib/db/sessions";
-import { getVercelProjectLinkByRepo } from "@/lib/db/vercel-project-links";
+import { getPrimarySignInPath } from "@/lib/auth/signin-path";
 import { getUserPreferences } from "@/lib/db/user-preferences";
 import { getUserGitHubToken } from "@/lib/github/user-token";
 import { sanitizeUserPreferencesForSession } from "@/lib/model-access";
 import { getRandomCityName } from "@/lib/random-city";
+import { getConfiguredSandboxBackend } from "@/lib/sandbox/backend";
 import { getServerSession } from "@/lib/session/get-server-session";
 
 interface RepoPageProps {
@@ -55,16 +56,11 @@ export default async function RepoPage({ params }: RepoPageProps) {
   const session = await getServerSession();
   if (!session?.user) {
     redirect(
-      `/api/auth/signin/vercel?next=${encodeURIComponent(`/${username}/${repo}`)}`,
+      `${getPrimarySignInPath()}?next=${encodeURIComponent(`/${username}/${repo}`)}`,
     );
   }
 
   const preferencesPromise = getUserPreferences(session.user.id);
-  const savedVercelProjectPromise = getVercelProjectLinkByRepo(
-    session.user.id,
-    username,
-    repo,
-  );
 
   // Get a GitHub token (if available) for private repo access
   const token = await getUserGitHubToken(session.user.id)
@@ -88,10 +84,7 @@ export default async function RepoPage({ params }: RepoPageProps) {
 
   // Use the user's preferred sandbox type and model
   const requestHost = (await nextHeaders()).get("host") ?? "";
-  const [rawPreferences, savedVercelProject] = await Promise.all([
-    preferencesPromise,
-    savedVercelProjectPromise,
-  ]);
+  const rawPreferences = await preferencesPromise;
   const preferences = sanitizeUserPreferencesForSession(
     rawPreferences,
     session,
@@ -113,16 +106,16 @@ export default async function RepoPage({ params }: RepoPageProps) {
       repoName: repo,
       branch: repoInfo.default_branch,
       cloneUrl,
-      vercelProjectId: savedVercelProject?.projectId ?? null,
-      vercelProjectName: savedVercelProject?.projectName ?? null,
-      vercelTeamId: savedVercelProject?.teamId ?? null,
-      vercelTeamSlug: savedVercelProject?.teamSlug ?? null,
+      vercelProjectId: null,
+      vercelProjectName: null,
+      vercelTeamId: null,
+      vercelTeamSlug: null,
       isNewBranch: false,
       autoCommitPushOverride: preferences.autoCommitPush,
       autoCreatePrOverride: preferences.autoCommitPush
         ? preferences.autoCreatePr
         : false,
-      sandboxState: { type: preferences.defaultSandboxType },
+      sandboxState: { type: getConfiguredSandboxBackend() },
       lifecycleState: "provisioning",
       lifecycleVersion: 0,
     },

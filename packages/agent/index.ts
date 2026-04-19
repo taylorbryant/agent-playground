@@ -1,4 +1,9 @@
-export { type GatewayConfig, type GatewayOptions, gateway } from "./models";
+export { gateway, getDirectProviderAvailableModels } from "./models";
+export type {
+  AvailableModelDescriptor,
+  GatewayConfig,
+  GatewayOptions,
+} from "./models";
 export type {
   AgentModelSelection,
   AgentSandboxContext,

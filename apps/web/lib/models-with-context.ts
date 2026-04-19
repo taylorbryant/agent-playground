@@ -9,6 +9,7 @@ import type {
   AvailableModelCostTier,
   GatewayAvailableModel,
 } from "./models";
+import { isLocalModeEnabled } from "./runtime-mode";
 
 const MODELS_DEV_URL = "https://models.dev/api.json";
 const MODELS_DEV_TIMEOUT_MS = 750;
@@ -202,6 +203,15 @@ function addModelsDevMetadata(
 }
 
 async function fetchGatewayModels(): Promise<GatewayModel[]> {
+  if (isLocalModeEnabled()) {
+    const { getDirectProviderAvailableModels } =
+      await import("@open-harness/agent");
+    const localModels = getDirectProviderAvailableModels();
+    if (localModels.length > 0) {
+      return localModels;
+    }
+  }
+
   try {
     const { models } = await gateway.getAvailableModels();
     return models;

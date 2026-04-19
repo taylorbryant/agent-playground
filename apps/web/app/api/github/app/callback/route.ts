@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { encrypt } from "@/lib/crypto";
 import { getGitHubAccount, upsertGitHubAccount } from "@/lib/db/accounts";
 import { syncUserInstallations } from "@/lib/github/installations-sync";
+import { getPrimarySignInPath } from "@/lib/auth/signin-path";
 import { getServerSession } from "@/lib/session/get-server-session";
 
 interface GitHubUser {
@@ -149,7 +150,7 @@ export async function GET(req: Request): Promise<Response> {
 
   const session = await getServerSession();
   if (!session?.user?.id) {
-    const signinUrl = new URL("/api/auth/signin/vercel", req.url);
+    const signinUrl = new URL(getPrimarySignInPath(), req.url);
     signinUrl.searchParams.set(
       "next",
       `${requestUrl.pathname}${requestUrl.search}`,

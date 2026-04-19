@@ -1,5 +1,11 @@
 import type { Sandbox, SandboxHooks } from "./interface";
 import type { SandboxStatus } from "./types";
+import { DockerSandbox } from "./docker/sandbox";
+import type { DockerState } from "./docker/state";
+import { LocalSandbox } from "./local/sandbox";
+import type { LocalState } from "./local/state";
+import { RemoteDockerSandbox } from "./remote-docker/sandbox";
+import type { RemoteDockerState } from "./remote-docker/state";
 import { connectVercel } from "./vercel/connect";
 import type { VercelState } from "./vercel/state";
 
@@ -10,7 +16,11 @@ export type { SandboxStatus };
  * Unified sandbox state type.
  * Use `type` discriminator to determine which sandbox implementation to use.
  */
-export type SandboxState = { type: "vercel" } & VercelState;
+export type SandboxState =
+  | ({ type: "vercel" } & VercelState)
+  | ({ type: "local" } & LocalState)
+  | ({ type: "docker" } & DockerState)
+  | ({ type: "remote-docker" } & RemoteDockerState);
 
 /**
  * Base connect options for all sandbox types.
@@ -48,7 +58,7 @@ export interface ConnectOptions {
  * Configuration for connecting to a sandbox.
  */
 export type SandboxConnectConfig = {
-  state: { type: "vercel" } & VercelState;
+  state: SandboxState;
   options?: ConnectOptions;
 };
 
@@ -67,9 +77,27 @@ export async function connectSandbox(
 
   if (isNewApi) {
     const config = configOrState as SandboxConnectConfig;
+    if (config.state.type === "local") {
+      return LocalSandbox.connect(config.state, config.options);
+    }
+    if (config.state.type === "docker") {
+      return DockerSandbox.connect(config.state, config.options);
+    }
+    if (config.state.type === "remote-docker") {
+      return RemoteDockerSandbox.connect(config.state, config.options);
+    }
     return connectVercel(config.state, config.options);
   }
 
   const state = configOrState as SandboxState;
+  if (state.type === "local") {
+    return LocalSandbox.connect(state, legacyOptions);
+  }
+  if (state.type === "docker") {
+    return DockerSandbox.connect(state, legacyOptions);
+  }
+  if (state.type === "remote-docker") {
+    return RemoteDockerSandbox.connect(state, legacyOptions);
+  }
   return connectVercel(state, legacyOptions);
 }

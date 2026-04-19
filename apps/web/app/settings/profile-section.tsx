@@ -18,7 +18,7 @@ export function ProfileSectionSkeleton() {
       <CardHeader>
         <CardTitle>Profile</CardTitle>
         <CardDescription>
-          Your profile information is synced from Vercel.
+          Your profile information for this account.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -60,13 +60,18 @@ export function ProfileSection() {
     return null;
   }
 
+  const profileSource =
+    session.authProvider === "local"
+      ? "Your profile information is coming from local mode."
+      : session.authProvider === "github"
+        ? "Your profile information is synced from GitHub."
+        : "Your profile information is synced from Vercel.";
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Profile</CardTitle>
-        <CardDescription>
-          Your profile information is synced from Vercel.
-        </CardDescription>
+        <CardDescription>{profileSource}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex items-center gap-4">

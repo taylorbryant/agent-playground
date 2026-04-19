@@ -4,6 +4,7 @@ import {
   requireOwnedChatById,
 } from "@/app/api/chat/_lib/chat-context";
 import type { WebAgentUIMessage } from "@/app/types";
+import { abortLocalRun, isLocalRunId } from "@/lib/chat/local-run-registry";
 import {
   compareAndSetChatActiveStreamId,
   createChatMessageIfNotExists,
@@ -48,8 +49,12 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   try {
-    const run = getRun(chat.activeStreamId);
-    await run.cancel();
+    if (isLocalRunId(chat.activeStreamId)) {
+      abortLocalRun(chat.activeStreamId);
+    } else {
+      const run = getRun(chat.activeStreamId);
+      await run.cancel();
+    }
   } catch (error) {
     console.error(
       `[workflow] Failed to cancel workflow run for chat ${chatId}:`,

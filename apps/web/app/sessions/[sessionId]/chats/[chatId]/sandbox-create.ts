@@ -107,7 +107,7 @@ export async function createSandbox(
       branch: cloneUrl ? (branch ?? "main") : undefined,
       isNewBranch: cloneUrl ? isNewBranch : false,
       sessionId,
-      sandboxType: sandboxType ?? "vercel",
+      sandboxType: sandboxType ?? "local",
     }),
   });
 

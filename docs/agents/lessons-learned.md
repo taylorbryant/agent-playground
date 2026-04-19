@@ -75,6 +75,7 @@ Hard-won knowledge from building this codebase. When you make a mistake or disco
 ## Chat / Streaming UI
 
 - In large chat/page client components, extract new feature-specific UI flows into colocated hooks and child components instead of adding more state/effects/handlers inline; if the feature state must survive dropdown/popover/dialog toggles, mount the hook in the parent view and pass its controls down.
+- Keep local-only chat helpers lazily imported from route handlers when tests partially mock shared modules like `ai` or `@open-harness/agent`; eager imports can break unrelated workflow-route tests by forcing mock shapes to include exports that path never uses.
 - In the web chat UI, do not keep `@ai-sdk/react` Chat instances alive after route transitions while they are still streaming; abort local stream processing and remove the instance on teardown, then rely on resumable stream reconnect when revisiting that chat.
 - For client-side tool flows (`ask_user_question`), `onFinish`-only assistant persistence is insufficient across route switches: persist the latest incoming message snapshot at API request start (upsert by message id) so answered/declined tool state survives teardown/resume and does not rehydrate stale `input-available` UI.
 - Request-start assistant snapshot persistence must be scoped and ownership-guarded: only upsert assistant messages when the request still owns the chat stream token, and refuse upserts on message-id scope conflict (different chat/role) to prevent stale writes and cross-chat overwrites.
@@ -110,3 +111,4 @@ Hard-won knowledge from building this codebase. When you make a mistake or disco
 - Even when branch push succeeds, GitHub PR creation can still return `403 Resource not accessible by integration`; expose a compare URL fallback so users can complete PR creation manually in the browser.
 - For manual compare fallback, include `title` and `body` query params on the GitHub compare URL so PR details are prefilled when API creation is unavailable.
 - Preserve fork PR metadata across retries: if a branch already tracks `fork/<branch>` and no new push is needed, derive and return `prHeadOwner` from fork upstream/remote state so later PR creation still uses a qualified head ref.
+- After adding a new Bun workspace app under `apps/*`, run `bun install` to refresh `bun.lock`; otherwise Turbo typecheck can warn that the workspace is missing from the lockfile even when the package itself is valid.

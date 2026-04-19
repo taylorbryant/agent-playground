@@ -4,6 +4,7 @@ import { getGitHubAccount } from "@/lib/db/accounts";
 import { getInstallationsByUserId } from "@/lib/db/installations";
 import { decrypt } from "@/lib/crypto";
 import { syncUserInstallations } from "@/lib/github/installations-sync";
+import { getPrimarySignInPath } from "@/lib/auth/signin-path";
 import { getServerSession } from "@/lib/session/get-server-session";
 
 function sanitizeRedirectTo(rawRedirectTo: string | null): string {
@@ -59,7 +60,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const redirectTo = sanitizeRedirectTo(req.nextUrl.searchParams.get("next"));
 
   if (!session?.user?.id) {
-    const signinUrl = new URL("/api/auth/signin/vercel", req.url);
+    const signinUrl = new URL(getPrimarySignInPath(), req.url);
     signinUrl.searchParams.set(
       "next",
       `${req.nextUrl.pathname}${req.nextUrl.search}`,

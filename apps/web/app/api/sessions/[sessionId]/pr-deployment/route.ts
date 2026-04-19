@@ -4,12 +4,6 @@ import {
 } from "@/app/api/sessions/_lib/session-context";
 import { findLatestVercelDeploymentUrlForPullRequest } from "@/lib/github/client";
 import { getUserGitHubToken } from "@/lib/github/user-token";
-import {
-  findLatestBuildingDeploymentUrlForBranch,
-  findLatestFailedDeploymentInspectorUrlForBranch,
-  findLatestPreviewDeploymentUrlForBranch,
-} from "@/lib/vercel/projects";
-import { getUserVercelToken } from "@/lib/vercel/token";
 
 type RouteContext = {
   params: Promise<{ sessionId: string }>;
@@ -41,7 +35,6 @@ export async function GET(req: Request, context: RouteContext) {
   const searchParams = new URL(req.url).searchParams;
   const requestedPrNumber = searchParams.get("prNumber");
   const parsedPrNumber = requestedPrNumber ? Number(requestedPrNumber) : null;
-  const requestedBranch = searchParams.get("branch")?.trim() || null;
 
   if (
     parsedPrNumber !== null &&
@@ -60,45 +53,6 @@ export async function GET(req: Request, context: RouteContext) {
     return Response.json({
       deploymentUrl: null,
     } satisfies PrDeploymentResponse);
-  }
-
-  const previewLookupBranch = requestedBranch ?? sessionRecord.branch;
-
-  if (
-    sessionRecord.prNumber === null &&
-    sessionRecord.vercelProjectId &&
-    previewLookupBranch
-  ) {
-    const vercelToken = await getUserVercelToken(authResult.userId);
-    if (vercelToken) {
-      const lookupParams = {
-        token: vercelToken,
-        projectIdOrName: sessionRecord.vercelProjectId,
-        branch: previewLookupBranch,
-        teamId: sessionRecord.vercelTeamId,
-      };
-
-      const [deploymentUrl, buildingDeploymentUrl, failedDeploymentUrl] =
-        await Promise.all([
-          findLatestPreviewDeploymentUrlForBranch(lookupParams).catch(
-            () => null,
-          ),
-          findLatestBuildingDeploymentUrlForBranch(lookupParams).catch(
-            () => null,
-          ),
-          findLatestFailedDeploymentInspectorUrlForBranch(lookupParams).catch(
-            () => null,
-          ),
-        ]);
-
-      if (deploymentUrl || buildingDeploymentUrl || failedDeploymentUrl) {
-        return Response.json({
-          deploymentUrl,
-          buildingDeploymentUrl,
-          failedDeploymentUrl,
-        } satisfies PrDeploymentResponse);
-      }
-    }
   }
 
   if (

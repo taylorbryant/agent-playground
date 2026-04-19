@@ -20,6 +20,36 @@ export {
   type SandboxConnectConfig,
 } from "./factory";
 
+// local
+export { LocalSandbox, type LocalState } from "./local";
+
+// docker
+export { DockerSandbox, type DockerState } from "./docker";
+
+// remote docker
+export { RemoteDockerSandbox, type RemoteDockerState } from "./remote-docker";
+export type {
+  CreateRemoteDockerSandboxRequest,
+  CreateRemoteDockerSandboxResponse,
+  GetRemoteDockerSandboxResponse,
+  RemoteDockerDeleteSandboxResponse,
+  RemoteDockerDirectoryEntry,
+  RemoteDockerExecDetachedRequest,
+  RemoteDockerExecDetachedResponse,
+  RemoteDockerExecRequest,
+  RemoteDockerExecResponse,
+  RemoteDockerExtendTimeoutRequest,
+  RemoteDockerExtendTimeoutResponse,
+  RemoteDockerFileResponse,
+  RemoteDockerMkdirRequest,
+  RemoteDockerSandboxPortInfo,
+  RemoteDockerPortResponse,
+  RemoteDockerReaddirResponse,
+  RemoteDockerSandboxStatus,
+  RemoteDockerStatResponse,
+  RemoteDockerWriteFileRequest,
+} from "./remote-docker";
+
 // vercel
 export {
   connectVercelSandbox,

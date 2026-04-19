@@ -23,6 +23,7 @@ import {
 import { getAllVariants } from "@/lib/model-variants";
 import { createCancelableReadableStream } from "@/lib/chat/create-cancelable-readable-stream";
 import { assistantFileLinkPrompt } from "@/lib/assistant-file-links";
+import { hasActiveLocalRun, isLocalRunId } from "@/lib/chat/local-run-registry";
 import { getServerSession } from "@/lib/session/get-server-session";
 import {
   isManagedTemplateTrialUser,
@@ -39,6 +40,7 @@ import { parseChatRequestBody, requireChatIdentifiers } from "./_lib/request";
 import { createChatRuntime } from "./_lib/runtime";
 import { runAgentWorkflow } from "@/app/workflows/chat";
 import { persistAssistantMessagesWithToolResults } from "./_lib/persist-tool-results";
+import { isLocalModeEnabled } from "@/lib/runtime-mode";
 
 export const maxDuration = 800;
 
@@ -122,6 +124,17 @@ export async function POST(req: Request) {
   // instead of starting a duplicate. This prevents auto-submit from spawning
   // parallel workflows when the client sees completed tool calls mid-loop.
   if (chat.activeStreamId) {
+    if (isLocalRunId(chat.activeStreamId)) {
+      if (hasActiveLocalRun(chat.activeStreamId)) {
+        return Response.json(
+          { error: "Another workflow is already running for this chat" },
+          { status: 409 },
+        );
+      }
+
+      await compareAndSetChatActiveStreamId(chatId, chat.activeStreamId, null);
+    }
+
     const existingStreamResolution = await reconcileExistingActiveStream(
       chatId,
       chat.activeStreamId,
@@ -221,6 +234,32 @@ export async function POST(req: Request) {
     shouldAutoCommitPush &&
     (sessionRecord.autoCreatePrOverride ?? preferences?.autoCreatePr ?? false);
 
+  if (isLocalModeEnabled()) {
+    const { createLocalChatStreamResponse } =
+      await import("./_lib/local-chat-response");
+
+    return createLocalChatStreamResponse({
+      chatId,
+      messages,
+      selectedModelId: selectedModelId ?? mainModelSelection.id,
+      modelId: mainModelSelection.id,
+      agentOptions: {
+        sandbox: {
+          state: activeSandboxState,
+          workingDirectory: sandbox.workingDirectory,
+          currentBranch: sandbox.currentBranch,
+          environmentDetails: sandbox.environmentDetails,
+        },
+        model: mainModelSelection,
+        ...(subagentModelSelection
+          ? { subagentModel: subagentModelSelection }
+          : {}),
+        ...(skills.length > 0 && { skills }),
+        customInstructions: assistantFileLinkPrompt,
+      },
+    });
+  }
+
   // Start the durable workflow
   const run = await start(runAgentWorkflow, [
     {
@@ -310,6 +349,12 @@ async function reconcileExistingActiveStream(
   chatId: string,
   activeStreamId: string,
 ): Promise<ExistingActiveStreamResolution> {
+  if (isLocalRunId(activeStreamId)) {
+    return hasActiveLocalRun(activeStreamId)
+      ? { action: "conflict" }
+      : { action: "ready" };
+  }
+
   const { getRun } = await import("workflow/api");
   let currentStreamId: string | null = activeStreamId;
 
